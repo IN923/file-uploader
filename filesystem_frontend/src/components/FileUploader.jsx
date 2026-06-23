@@ -1,199 +1,262 @@
-import React from 'react';
-import { useState } from 'react';
-import api from '../api/axios'
+import React, { useState, useEffect } from "react";
 import { Pool, spawn, Worker } from "threads";
+import axios from "../api/axios";
 import ProgressBar from "./ProgressBar";
+import MultipleProgressBar from "./MultipleProgressBar";
 
-function FileUploader() {
+const CHUNK_SIZE = 10 * 1024 * 1024; // 10 MB
+const CONCURRENCY = 4;
 
-    const [errors, setErrors] = useState({})
-    const maxFileSize = 1024 * 1024 * 1024
-    let filesize = 0;
-    let filename = null;
-    const [progress, setProgress] = useState(0);
+export default function FileUploader() {
+  const [progress, setProgress] = useState(0);
+  const [uploadedBytes, setUploadedBytes] = useState(0);
+  const [totalBytes, setTotalBytes] = useState(0);
+  const [status, setStatus] = useState("Idle");
+  const [socket, setSocket] = useState(null);
+  const [fileswithprogress, setFiles] = useState([]);
+  useEffect(() => {
+    return () => {
+      if (socket) socket.close();
+    };
+  }, [socket]);
+  const handleUpload = async (e) => {
+    e.preventDefault();
 
-    const apiURL = import.meta.env.VITE_API_URL;
+    const file = document.getElementById("file-upload").files[0];
 
-    function validateFile(event) {
-        const file = event.target.files[0]
-        const newErrors = {}
-        if (file.size > maxFileSize) {
-            newErrors.fileError = "Maximum file size :1GB"
+    if (!file) return;
+
+    setStatus("Uploading");
+    setProgress(0);
+    setUploadedBytes(0);
+    setTotalBytes(file.size);
+
+    try {
+      // Create upload record first
+      const startResponse = await axios.post(
+        "/upload/start/",
+        {
+          filename: file.name,
+          file_size: file.size,
         }
+      );
 
-        filesize = file.size;
-        filename = file.filename;
-        setErrors(newErrors)
-        return Object.keys(newErrors).length === 0
-    }
+      const uploadId = startResponse.data.uploaded_file_id;
+      console.log("uploadId=", uploadId, startResponse.data);
 
-    // const handleImageChange = async (event) => {
-    //     event.preventDefault()
-    //     const file = document.getElementById('file-upload').files[0]
-    //     console.log("Selected file:", file.size);
+      console.log("upload id on frontend:", uploadId)
+      const totalChunks = Math.ceil(
+        file.size / CHUNK_SIZE
+      );
 
-    //     const maxFileSize = 1024 * 1024 * 1024
-    //     console.log(maxFileSize);
-    //     // if (file && file.size > maxFileSize) {
-    //     //     return "Maximum file size:1GB"
-    //     // }
+      const pool = Pool(
+        () =>
+          spawn(
+            new Worker(
+              new URL(
+                "../workers/worker.js",
+                import.meta.url
+              ),
+              { type: "module" }
+            )
+          ),
+        CONCURRENCY
+      );
 
-    //     const chunkSize = 1024
-    //     const totalChunks = Math.ceil(file.size / chunkSize)
-    //     // console.log('totalChunks:', totalChunks)
-    //     let chunk_number = 0 // chunk index
-    //     let uploaded_file_id = null
-    //     async function fileChunking() {
-    //         for (let start = 0; start < file.size; start += chunkSize) {
-    //             const chunk = file.slice(start, start + chunkSize);
-    //             // console.log("file chunk:", chunk);
-    //             // console.log('chunknumber', chunk_number)
-    //             // console.log('file size', file.size)
-    //             const data = await uploadChunk(chunk, chunk_number, file.name, file.size, totalChunks, uploaded_file_id)
+      const tasks = [];
 
-    //             uploaded_file_id = data
+      for (
+        let chunkNumber = 0;
+        chunkNumber < totalChunks;
+        chunkNumber++
+      ) {
+        const start = chunkNumber * CHUNK_SIZE;
 
-    //             chunk_number += 1
-
-    //             // if (chunk_number === 3) {
-    //             //     break
-    //             // }
-
-    //         }
-
-    //     }
-    //     await fileChunking()
-    //     console.log("uploading file identifier",uploaded_file_id)
-    //     const merge_file = await fileMerge(uploaded_file_id)
-    // }
-
-    // async function uploadChunk(chunk, chunk_number, filename, file_size, totalChunks, uploaded_file_id) {
-    //     // console.log("uploaded file id:", uploaded_file_id)
-
-    //     const formData = new FormData()
-    //     formData.append('file', chunk)
-    //     if (uploaded_file_id === null) {
-    //         formData.append('filename', filename)
-    //         formData.append('file_size', file_size)
-    //         formData.append('total_chunks', totalChunks)
-    //         formData.append('chunk_number', chunk_number)
-    //     }
-    //     else {
-    //         formData.append('chunk_number', chunk_number)
-    //         formData.append('uploadfile', uploaded_file_id)
-    //     }
-
-    //     const response = await fetch('http://127.0.0.1:8000/upload/filechunk/', {
-    //         method: 'POST',
-    //         body: formData,
-    //     })
-
-    //     let { uploaded_file_id: saved_file_id } = await response.json()
-    //     // console.log("saved file id:", saved_file_id)
-    //     return saved_file_id
-    // }
-
-    // async function fileMerge(uploaded_file_id) {
-    //     const response = await fetch('http://127.0.0.1:8000/upload/filemerge/', {
-    //         method: 'POST',
-    //         headers:{
-    //             'Content-Type':'application/json'
-    //         },
-    //         body: JSON.stringify({'uploaded_file_id':uploaded_file_id}),
-    //     })
-
-    //     const data = await response.json()
-    //     return data
-    // }
-    const chunkSize = 10 * 1024 * 1024;
-    let uploaded_file_id = null;
-    const chunksQueue = [];
-
-    async function handleImageUpload(event) {
-        event.preventDefault();
-        const file = document.getElementById("file-upload").files[0];
-
-        if (!file) return;
-
-        const totalChunks = Math.ceil(file.size / chunkSize);
-        console.log("total chunks=",totalChunks);
-        const pool = Pool(
-            () => spawn(new Worker("src/workers/worker.js", {
-                type: "module"
-            })),
-            4
+        const chunk = file.slice(
+          start,
+          start + CHUNK_SIZE
         );
 
-        const tasks = [];
+        tasks.push(
+          pool.queue(async (worker) => {
+            const result =
+              await worker.uploadChunk({
+                uploadId,
+                chunk,
+                chunkNumber,
+                totalChunks,
+                file
+              });
 
-        for (let chunkId = 0; chunkId < totalChunks; chunkId++) {
-            tasks.push(
-                pool.queue(async worker => {
+            setUploadedBytes((prev) => {
+              const uploaded =
+                prev + result.uploadedBytes;
 
-                    return worker.uploadChunk(
-                        file,
-                        chunkId,
-                        totalChunks,
-                        file.name,
-                        file.size
-                    );
-                })
-            );
-        }
+              setProgress(
+                Math.round(
+                  (uploaded * 100) / file.size
+                )
+              );
 
-        const result = await Promise.all(tasks);
-        console.log("result=", result);
-        await pool.terminate();
+              return uploaded;
+            });
 
-        console.log("Upload completed");
+            return result;
+          })
+        );
+      }
+
+      await Promise.all(tasks);
+
+      await axios.post("upload/filemerge/", {
+        upload_id: uploadId,
+      });
+
+      setProgress(100);
+      setStatus("Completed");
+
+      await pool.terminate();
+    } catch (error) {
+      console.error(error);
+      setStatus("Failed");
     }
+  };
 
-    async function fileMerge(uploaded_file_id) {
-        // const response = await fetch(`{apiURL}/upload/filemerge/`, {
-        //     method: 'POST',
-        //     headers: {
-        //         'Content-Type': 'application/json'
-        //     },
-        //     body: JSON.stringify({ 'uploaded_file_id': uploaded_file_id }),
-        // })
 
-        try {
-            const response = await axios.post('upload/filemerge/',
-                JSON.stringify({ 'uploaded_file_id': uploaded_file_id })
-            )
+  function connectWebSocket(jobId) {
+    const ws = new WebSocket(
+      `ws://127.0.0.1:8000/ws/progress/${jobId}/`
+    );
+
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      console.log("event data=", event.data)
+      setFiles((prevFiles) => {
+        const updatedFiles = prevFiles.map((file) =>
+          file.id === data.id
+            ? { ...file, ...data }
+            : file
+        );
+
+        const allCompleted =
+          updatedFiles.length > 0 &&
+          updatedFiles.every(
+            (file) => file.status === "completed"
+          );
+
+        if (allCompleted) {
+          setTimeout(() => {
+            setFiles([]);
+          }, 3000);
         }
-        catch (error) {
-            console.log('axios error:', error)
-        }
 
-        const data = await response.json()
-        return data
+        return updatedFiles;
+      });
+
+
+      // if (data.status === "completed") {
+      //   ws.close();
+      // }
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket closed");
+    };
+
+    ws.onerror = (err) => {
+      console.error("WebSocket error", err);
+    };
+
+    setSocket(ws);
+  }
+
+
+  async function handleMultipleUpload(event) {
+    event.preventDefault();
+    const link = document.getElementById("file-multiple-upload").value;
+
+    try {
+      const response = await axios.post("upload/get-files/", { link });
+      const jobId = response.data["job_id"];
+      // const socket = new WebSocket(`ws://127.0.0.1:8000/ws/progress/${jobId}/`)
+      setFiles(
+        response.data.files.map(file => ({
+          ...file,
+          progress: file.progress ?? 0,
+          status: file.status ?? "Pending",
+        }))
+      );
+      connectWebSocket(jobId)
+      // socket.onmessage = (event) => {
+      //   const data = JSON.parse(event.data);
+
+      //   connectWebSocket(jobId)
+      //   if (data.status === "completed") {
+      //     socket.close();
+      //   }
+      // };
+
+    } catch (error) {
+      console.error(error);
+      setStatus("Failed");
     }
+  }
 
-    return (
-        <>
-            <div className="container file-upload-container">
-                <form method='POST' onSubmit={handleImageUpload} className="w-50" encType="multipart/form-data">
+  return (
+    <>
+      <div className="container mt-4">
+        <form onSubmit={handleUpload}>
+          <input
+            id="file-upload"
+            type="file"
+            className="form-control"
+          />
 
-                    <label htmlFor="file-upload" className="mb-3">Upload File</label>
-                    <input id="file-upload" className="form-control" type="file" name="uploaded_file" />
-                    {errors.fileError && <span className='error mt-1'>{errors.fileError}</span>}
-                    <div className="d-flex justify-content-center align-items-center mt-4 mb-2">
-                        <input type="submit" value="Upload" className="px-3" />
-                    </div>
+          <button
+            className="btn btn-primary mt-3"
+            type="submit"
+          >
+            Upload
+          </button>
+        </form>
 
-                </form>
+        <ProgressBar
+          progress={progress}
+          uploadedBytes={uploadedBytes}
+          totalBytes={totalBytes}
+          status={status}
+        />
+      </div>
 
-                <ProgressBar
-        progress={progress}
-        uploadedSize="450 MB"
-        totalSize="1 GB"
-        status="Uploading"
-      />
-            </div>
-        </>
-    )
+      <div className="container mt-4">
+        <form onSubmit={handleMultipleUpload}>
+          <input
+            id="file-multiple-upload"
+            type="text"
+            className="form-control"
+          />
+
+          <button
+            className="btn btn-primary mt-3"
+            type="submit"
+          >
+            submit
+          </button>
+        </form>
+
+        {/* <ProgressBar
+          progress={progress}
+          uploadedBytes={uploadedBytes}
+          totalBytes={totalBytes}
+          status={status}
+        /> */}
+      </div>
+
+      {fileswithprogress.length > 0 && (<MultipleProgressBar files={fileswithprogress} />)}
+    </>
+  );
 }
-
-export default FileUploader;
-

@@ -27,3 +27,37 @@ class UploadChunk(models.Model):
 # Add that email as a member of the Shared Drive.
 # Give it Content Manager permissions.
 # Configure your storage backend to upload into that Shared Drive/folder.
+
+class ImportJob(models.Model):
+
+    STATUS_CHOICES = (
+        ('PENDING', 'PENDING'),
+        ('PROCESSING', 'PROCESSING'),
+        ('COMPLETED', 'COMPLETED'),
+        ('FAILED', 'FAILED'),
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='PENDING'
+    )
+    created_at = models.DateTimeField(auto_now_add=True,null=True)
+
+class ImportFile(models.Model):
+    STATUS_CHOICES = (
+        ('PENDING','PENDING'),
+        ('PROCESSING','PROCESSING'),
+        ('COMPLETED','COMPLETED'),
+        ('FAILED','FAILED'),
+    )
+
+    folder_url = models.URLField()
+    status = models.CharField(max_length=20)
+    total_bytes = models.BigIntegerField(default=0)
+    filename =models.FileField(null=True)
+    unique_id = models.UUIDField(null=True)
+    job = models.ForeignKey(ImportJob,on_delete=models.CASCADE,related_name='files')
+    # processed_bytes = models.BigIntegerField(default=0)
+    # destination = models.FileField(null=True)
+

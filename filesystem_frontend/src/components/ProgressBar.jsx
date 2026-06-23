@@ -1,58 +1,61 @@
 import React from "react";
 
-const ProgressBar = ({
-  progress = 0,
-  uploadedSize = "",
-  totalSize = "",
-  status = "Uploading",
-}) => {
+function formatBytes(bytes) {
+  if (!bytes) return "0 B";
+
+  const units = [
+    "B",
+    "KB",
+    "MB",
+    "GB",
+    "TB",
+  ];
+
+  const index = Math.floor(
+    Math.log(bytes) / Math.log(1024)
+  );
+
+  return `${(
+    bytes / Math.pow(1024, index)
+  ).toFixed(2)} ${units[index]}`;
+}
+
+export default function ProgressBar({
+  progress,
+  uploadedBytes,
+  totalBytes,
+  status,
+}) {
   return (
-    <div className="mt-3">
-      <div className="d-flex justify-content-between mb-1">
+    <div className="mt-4">
+      <div className="d-flex justify-content-between">
         <span>{status}</span>
         <span>{progress}%</span>
       </div>
 
-      <div className="progress" style={{ height: "25px" }}>
+      <div
+        className="progress"
+        style={{ height: "25px" }}
+      >
         <div
           className={`progress-bar ${
             status === "Completed"
               ? "bg-success"
-              : status === "Failed"
-              ? "bg-danger"
               : "progress-bar-striped progress-bar-animated"
           }`}
-          role="progressbar"
-          style={{ width: `${progress}%` }}
-          aria-valuenow={progress}
-          aria-valuemin="0"
-          aria-valuemax="100"
+          style={{
+            width: `${progress}%`,
+          }}
         >
           {progress}%
         </div>
       </div>
 
-      <div className="mt-2 text-muted">
-        {uploadedSize && totalSize && (
-          <small>
-            {uploadedSize} / {totalSize}
-          </small>
-        )}
-      </div>
-
-      {status === "Completed" && (
-        <div className="mt-2 text-success fw-bold">
-          ✓ Upload Completed
-        </div>
-      )}
-
-      {status === "Failed" && (
-        <div className="mt-2 text-danger fw-bold">
-          ✗ Upload Failed
-        </div>
-      )}
+      <small>
+        {formatBytes(uploadedBytes)}
+        {" / "}
+        {formatBytes(totalBytes)}
+      </small>
     </div>
   );
-};
-
-export default ProgressBar;
+}

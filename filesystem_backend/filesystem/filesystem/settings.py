@@ -34,6 +34,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    "daphne",
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -41,7 +42,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'corsheaders',
-    'gdstorage',
+    'channels',
     'file_upload',
 ]
 
@@ -73,8 +74,8 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'filesystem.wsgi.application'
-
+# WSGI_APPLICATION = 'filesystem.wsgi.application'
+ASGI_APPLICATION = 'filesystem.asgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
@@ -133,3 +134,50 @@ MEDIA_URL = '/media/'
 GOOGLE_DRIVE_STORAGE_JSON_KEY_FILE = r'C:\Users\inder.DESKTOP-CFTSNU2\Downloads\filesystem-gdrive-0b50376bec1a.json'
 # GOOGLE_DRIVE_STORAGE_MEDIA_ROOT = 'django upload file system'
 
+# CHANNEL_LAYERS = {
+#     "default": {
+#         "BACKEND": "channels_redis.core.RedisChannelLayer",
+#         "CONFIG": {
+#             "hosts": [{
+#                 "address": ("127.0.0.1", 6379),
+#                 "socket_timeout": 300,
+#                 "socket_connect_timeout": 30,
+#             }],
+#         },
+#     },
+# }
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [{
+                "address":"redis://127.0.0.1:6379/0",
+                "socket_timeout": 60,
+                "socket_connect_timeout": 60,
+            }
+            ],
+        },
+        },
+    }
+
+# CHANNEL_LAYERS = {
+#     "default": {
+#         "BACKEND": "channels.layers.InMemoryChannelLayer"
+#     }
+# }
+
+CELERY_BROKER_URL = "redis://127.0.0.1:6379/0"
+CELERY_RESULT_BACKEND = "redis://127.0.0.1:6379/0"
+
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "socket_timeout": 30,
+    "socket_connect_timeout": 30,
+}
+
+# CACHES = {
+#     "default": {
+#         "BACKEND": "django.core.cache.backends.redis.RedisCache",
+#         "LOCATION": "redis://127.0.0.1:6379/1",
+#     }
+# }

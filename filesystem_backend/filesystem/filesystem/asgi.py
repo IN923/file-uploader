@@ -7,10 +7,18 @@ For more information on this file, see
 https://docs.djangoproject.com/en/6.0/howto/deployment/asgi/
 """
 
+# asgi.py
+
 import os
-
+from channels.routing import ProtocolTypeRouter, URLRouter
 from django.core.asgi import get_asgi_application
+import file_upload.routing
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'filesystem.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "filesystem.settings")
 
-application = get_asgi_application()
+application = ProtocolTypeRouter({
+    "http": get_asgi_application(),
+    "websocket": URLRouter(
+        file_upload.routing.websocket_urlpatterns
+    ),
+})
