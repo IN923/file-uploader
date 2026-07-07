@@ -4,150 +4,85 @@ from django.core.cache import cache
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
-from .models import ImportFile, ImportJob
+from .models import *
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from celery.exceptions import SoftTimeLimitExceeded
+from django.core.files import File as DjangoFile
+# from asgiref.sync import sync_to_async
 import os
 import uuid
 import pickle
-
-DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
-
-
-def _get_drive_service_fordownload():
-    # path = os.path.join(settings.BASE_DIR, "service_account.json")
-    # path = os.path.join(settings.BASE_DIR, "client_secret.json")
-    # credentials = service_account.Credentials.from_service_account_file(
-    #     path, scopes=DRIVE_SCOPES
-    # )
-    # return build("drive", "v3", credentials=credentials)
-    path = os.path.join(settings.BASE_DIR, "token.pickle")
-    with open(path,'rb') as token:
-        credentials = pickle.load(token)
-    return build("drive", "v3", credentials=credentials)
-
-def _get_drive_service_forupload():
-    path = os.path.join(settings.BASE_DIR, "client_secret.json")
-    with open('token.pickle', 'rb') as token:
-        credentials = pickle.load(token)
-    return build("drive", "v3", credentials=credentials)
-
-def _send_progress(file_id,job_id, stage, progress, filename, status="in_progress"):
-    # cache_key = f"job_progress_{job_id}"
-    print(f"job_id={job_id},stage={stage},progress={progress},filename={filename},status={status}")
-    job_data = {}
-
-    # job_data = {
-    #     "job_id":job_id,
-    #     "stage": stage,
-    #     "progress": progress,
-    #     "filename": filename
-    # }
-
-    # total = job_data.get("total_files", 1)
-    # completed = sum(1 for f in files.values() if "status" == "completed")
-    # failed = sum(1 for f in files.values() if f["status"] == "error")
-    job_data["id"] = file_id
-    job_data["progress"] = progress
-    job_data["filename"] = filename
-    job_data["stage"] = stage
-    job_data["job_id"]=job_id
-    job_data["status"]=status
-    # if failed:
-    #     job_data["status"] = "error"
-    # elif completed >= total:
-    #     job_data["status"] = "completed"
-    # else:
-    #     job_data["status"] = "in_progress"
-
-    # cache.set(cache_key, job_data, timeout=3600)
-
-    channel_layer = get_channel_layer()
-    if channel_layer is not None:
-        async_to_sync(channel_layer.group_send)(
-            f"job_{job_id}",
-            {"type": "progress_update", "data": job_data},
-        )
+import time
+import io
+import sys
+from .utils import *
 
 
-@shared_task(soft_time_limit=1800,time_limit=3000)
-def download_file(job_id, folder_id, file_id, filename):
+@shared_task(soft_time_limit=600,time_limit=900)
+def MergeFileTask(file_unique_name,socketname):
+
     try:
-        drive_service = _get_drive_service_fordownload()
-        request = drive_service.files().get_media(fileId=file_id)
-        media_path = os.path.join(settings.BASE_DIR, "media", "downloads")
-        os.makedirs(media_path, exist_ok=True)
+        file = File.objects.get(unique_name=file_unique_name)
+    except File.DoesNotExist:
+        return print("message':'File not found error")
 
-        extns_type = filename.split(".")[-1]
-        unique_filename_id = uuid.uuid4()
-        filepath = os.path.join(
-            settings.BASE_DIR, "media", "downloads", f"{unique_filename_id}.{extns_type}"
-        )
+    chunks = FileChunk.objects.filter(file=file).order_by('chunk_number')
 
-        job = ImportJob.objects.get(id=job_id)
-        saved_file_reference = ImportFile.objects.create(
-            job=job,
-            status="PENDING",
-            folder_url=folder_id,
-            filename=filename,
-            unique_id=unique_filename_id,
-        )
+    with io.BytesIO() as file_collection:
+        for filechunk in chunks:
+            print(f"chunk Number={filechunk.chunk_number},length file={filechunk.chunk_file.size}")
+            with open(filechunk.chunk_file.path,'rb') as f:
+                print("types of file obj=",type(f),type(file_collection))
+                file_content = f.read()
 
-        try:
-            with open(filepath, "wb") as fh:
-                downloader = MediaIoBaseDownload(fh, request)
-                done = False
-                print("donnnnnnnnnniiiiiiiiii",downloader)
-                while not done:
-                    status, done = downloader.next_chunk()
-                    print("down2222222222222222:",done)
-                    # if status:
-                    #     print("download progress=",status.progress())
-                    #     progress = int(status.progress() * 100)
-                    #     print("progress=====",progress)
-                    #     _send_progress(job_id, "download", progress, filename)
+                file_collection.write(file_content)
 
-            upload_service = _get_drive_service_forupload()
-            upload_folder_id = "1Te73abx9QJQPNbUZj4ttX4Gdievx1QfV"
+        file_collection = DjangoFile(file_collection)
+        file_collection.name = file.name
+        file.file = file_collection
+        file.save()
 
-            file_metadata = {
-                "name": filename,
-                "parents": [upload_folder_id],
-            }
+        if file.file.size>1000000000:
+            async_to_sync(channel_layer.group_send)(
+                f'{socketname}',{
+                    'type':'progress.update',
+                    'data':{
+                        'file_unique_name':f'{file_unique_name}',
+                        'progress':0,
+                        'uploaded':0,
+                        'total':0,
+                        'progress_status':'FAILED'
+                        }
+                        })
+            file.status = 'failed'
+            file.save()
+            raise Exception("file size is greater than 1GB")
 
-            media_dest = MediaFileUpload(
-                filepath,
-                mimetype="application/octet-stream",
-                resumable=True,
-                chunksize=26214400,
-            )
+        print("file emrging done iiiiiiiiiii")
+        print("Sending to group:", repr(file.unique_name))
+        channel_layer = get_channel_layer()
+        print(f'ffffffffff====={socketname}')
+        async_to_sync(channel_layer.group_send)(f'{socketname}',{
+            'type':'merge.status',
+            'msg':'success',
+            'filename':file.file.name,
+            'socketname':socketname,
+            'unique_name':f'{file.unique_name}'})
 
-            file_request = upload_service.files().create(
-                body=file_metadata,
-                media_body=media_dest,
-                fields="id",
-            )
+@shared_task()
+def upload_file(socketname,should_download=False,filename=None,file_item=None,download_folder_id=None):
+    try:
+        GDrive=GDrive_API()
+        print(f"filename={filename},file_item={file_item}")
+        if should_download:
+            print(f"files download==========={should_download},file_item={file_item}oooooo")
+            filename = GDrive.filesDownload(file=file_item,download_folder_id=download_folder_id)
+            print(f"filename in task celery={filename}")
+            GDrive.filesUpload(filename,file_item.get('file_unique_name'),socketname)
+        else:
+            GDrive.filesUpload(filename,file_item,socketname)
+        print("iiiii=",filename)
+    except Exception as e:
+        pass
 
-            response = None
-            while response is None:
-                status, response = file_request.next_chunk()
-                print("response rrrrrrrrrr=",response)
-                if status:
-                    print("upload progress=",status.progress(),response)
-                    file_id=response.get("id")
-                    progress = int(status.progress() * 100)
-                    _send_progress(file_id,id,job_id, "upload", progress, filename)
-                    # pass
-
-            saved_file_reference.status = "COMPLETED"
-            saved_file_reference.save()
-            _send_progress(file_id,job_id, "upload", 100, filename, status="completed")
-
-        except Exception as exc:
-            saved_file_reference.status = "FAILED"
-            saved_file_reference.save()
-            _send_progress(file_id,job_id, "error", 0, filename, status="error")
-            raise
-    except SoftTimeLimitExceeded:
-        print("soft time limit exceeded")

@@ -87,6 +87,13 @@ DATABASES = {
     }
 }
 
+# DATABASES = {
+#     'default':{
+#         'ENGINE':'django.db.backends.postgresql',
+#         'NAME':
+#     }
+# }
+
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -134,19 +141,6 @@ MEDIA_URL = '/media/'
 GOOGLE_DRIVE_STORAGE_JSON_KEY_FILE = r'C:\Users\inder.DESKTOP-CFTSNU2\Downloads\filesystem-gdrive-0b50376bec1a.json'
 # GOOGLE_DRIVE_STORAGE_MEDIA_ROOT = 'django upload file system'
 
-# CHANNEL_LAYERS = {
-#     "default": {
-#         "BACKEND": "channels_redis.core.RedisChannelLayer",
-#         "CONFIG": {
-#             "hosts": [{
-#                 "address": ("127.0.0.1", 6379),
-#                 "socket_timeout": 300,
-#                 "socket_connect_timeout": 30,
-#             }],
-#         },
-#     },
-# }
-
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
@@ -161,12 +155,6 @@ CHANNEL_LAYERS = {
         },
     }
 
-# CHANNEL_LAYERS = {
-#     "default": {
-#         "BACKEND": "channels.layers.InMemoryChannelLayer"
-#     }
-# }
-
 CELERY_BROKER_URL = "redis://127.0.0.1:6379/0"
 CELERY_RESULT_BACKEND = "redis://127.0.0.1:6379/0"
 
@@ -175,9 +163,8 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {
     "socket_connect_timeout": 30,
 }
 
-# CACHES = {
-#     "default": {
-#         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-#         "LOCATION": "redis://127.0.0.1:6379/1",
-#     }
-# }
+
+
+
+
+
